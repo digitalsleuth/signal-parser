@@ -1,0 +1,4 @@
+*.egg_info/
+build/
+Dockerfile
+sdist/

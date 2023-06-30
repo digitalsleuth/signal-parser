@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -x
+
+DISTRO=${DISTRO:="focal"}
+
+docker run -it --rm --name="signal-docker-dev" -v `pwd`/:/signal --cap-add SYS_ADMIN signal-docker-dev \
+  /bin/bash
