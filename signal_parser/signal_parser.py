@@ -11,7 +11,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 Notes: E164 - https://en.wikipedia.org/wiki/E.164
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __authors__ = "G-K7, Corey Forman (digitalsleuth)"
 
 
@@ -264,7 +264,10 @@ def get_utc(ts):
 
 
 def start_web(args):
-    from signal_parser import spweb
+    try:
+        from signal_parser import spweb
+    except ImportError:
+        import spweb
     IP = args["web"]
     data_path = f'{args["dir"]}{os.sep}'
     out_dir = f'{args["output"]}{os.sep}'
@@ -283,7 +286,6 @@ def start_web(args):
     os.chdir(curdir)
     spweb.app.config['src'] = out_dir
     spweb.app.static_url_path = f'{dst_path}'
-    print(f'{dst_path}')
     spweb.app.static_folder = f'{dst_path}'
     spweb.app.run(host=IP)
 
@@ -307,6 +309,12 @@ def main():
         metavar="OUTPUT_DIR",
         help="the location for storing processed data",
         required=True,
+    )
+    arg_parse.add_argument(
+        "-l",
+        "--load",
+        help="load pre-processed data - does not re-process, requires -w, -o, -d",
+        action='store_true',
     )
     arg_parse.add_argument(
         "-w",
@@ -341,10 +349,23 @@ def main():
         raise SystemExit(1)
     if not os.path.exists(arg_list["output"]):
         os.mkdir(arg_list["output"])
-    messages, conversations, items = parse_db(arg_list)
-    analyze_data(messages, conversations, items, arg_list)
-    if arg_list["web"]:
+    if arg_list["load"] and not os.path.exists(arg_list["load"]):
+        print(
+            "The chosen directory does not exist! Please check your path and try again!"
+        )
+        raise SystemExit(1)
+    if arg_list["load"] and not arg_list["web"]:
+        print(
+            "The \"load\" and \"web\" options must be used together. Try your command again and make sure you select -w/--web"
+    )
+        raise SystemExit(1)
+    if arg_list["web"] and arg_list["dir"] and arg_list["output"] and arg_list["load"]:
         start_web(arg_list)
+    elif (arg_list["dir"] and arg_list["output"]) and not arg_list["load"]:
+        messages, conversations, items = parse_db(arg_list)
+        analyze_data(messages, conversations, items, arg_list)
+        if arg_list["web"]:
+            start_web(arg_list)
 
 if __name__ == "__main__":
     main()

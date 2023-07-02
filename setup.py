@@ -7,7 +7,7 @@ with open("README.md", encoding='utf8') as readme:
 
 setup(
     name="signal_parser",
-    version="1.0.0",
+    version="1.1.0",
     author="G-K7, Corey Forman (digitalsleuth)",
     license="MIT",
     url="https://github.com/digitalsleuth/signal_parser",
