@@ -1,0 +1,2 @@
+[console_scripts]
+signal-parser = signal_parser.signal_parser:main

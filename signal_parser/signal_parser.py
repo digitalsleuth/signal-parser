@@ -11,7 +11,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 Notes: E164 - https://en.wikipedia.org/wiki/E.164
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __authors__ = "G-K7, Corey Forman (digitalsleuth)"
 
 
