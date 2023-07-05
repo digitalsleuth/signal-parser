@@ -1,3 +1,0 @@
-Flask
-python-dateutil
-sqlcipher3-binary

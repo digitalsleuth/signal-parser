@@ -1,4 +1,4 @@
-*.egg_info/
+*.egg-info/
 build/
 Dockerfile
 sdist/
