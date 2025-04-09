@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
-from flask import Flask
-from flask import render_template
+from flask import Flask, render_template, url_for
 import json
 import sys
 import os
 
 app = Flask(__name__)
 
+@app.route("/favicon.ico")
+def favicon():
+    return url_for('static', filename='data:,')
+    
 @app.route("/")
 def home():
     src_dir = app.config.get('src')
@@ -19,7 +22,7 @@ def home():
     return render_template(
         'index.html',
         contacts=contacts,
-        device_number=device_info['accountE164'],
+        device_number=device_info['number_id'],
         title="Signal",
         description="Signal Contacts"
     )
@@ -37,7 +40,7 @@ def conversation(contact):
     contact_name = contacts[contact]
     return render_template(
         'conversations.html',
-        device_number=device_info['accountE164'],
+        device_number=device_info['number_id'],
         contact_name=contact_name,
         contact=contact,
         contacts=contacts,
@@ -54,10 +57,14 @@ def device():
         config = json.load(json_config)
     with open(f'{src_dir}items.json') as json_items:
         device_info = json.load(json_items)
+    if int(device_info['version'][0]) < 7:
+        config_key = config['key']
+    else:
+        config_key = config['encryptedKey']
     return render_template(
         'device.html',
         device_info=device_info,
-        key=config['key'],
+        key=config_key,
         title="Signal Device Info",
         description="Signal Device Info"
     )
@@ -72,7 +79,7 @@ def attachments():
         messages = json.load(json_messages)
     return render_template(
         'attachments.html',
-        device_number=device_info['accountE164'],
+        device_number=device_info['number_id'],
         messages=messages,
         src_dir=src_dir,
         title="Signal Attachments",
@@ -90,7 +97,7 @@ def applog():
         device_info = json.load(json_items)
     return render_template(
         'applogs.html',
-        device_number=device_info['accountE164'],
+        device_number=device_info['number_id'],
         applogs=applogs,
         title="Signal App Logs",
         description="Signal App Logs"
@@ -108,7 +115,7 @@ def mainlog():
 
     return render_template(
         'mainlogs.html',
-        device_number=device_info['accountE164'],
+        device_number=device_info['number_id'],
         mainlogs=mainlogs,
         title="Signal Main Logs",
         description="Signal Main Logs"

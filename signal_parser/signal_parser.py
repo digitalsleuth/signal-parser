@@ -6,23 +6,29 @@ import json
 import argparse
 from datetime import datetime as dt
 from sqlcipher3 import dbapi2 as sqlcipher
+from flask import send_from_directory
 
 """
 Notes: E164 - https://en.wikipedia.org/wiki/E.164
 """
 
-__version__ = "1.2.0"
+__version__ = "2.0.0"
 __authors__ = "G-K7, Corey Forman (digitalsleuth)"
 
 
 def get_key(config_file):
     f = open(config_file)
-    db_key = json.load(f)["key"]
+    db_config = json.load(f)
+    if "key" in db_config:
+        db_key = db_config["key"]
+    elif "encryptedKey" in db_config:
+        db_key = db_config["encryptedKey"]
     return db_key
 
 
 def parse_db(args):
-    db_key = get_key(f"{args['dir']}{os.sep}config.json")
+    #db_key = get_key(f"{args['dir']}{os.sep}config.json")
+    db_key = '54a842701b377f86f5d424241128e158dd3b139d36cea3fd43acb238bfdfbcd3'
     PRAGMA_KEY = f"""pragma key="x'{db_key}'";"""
     db = sqlcipher.connect(f"{args['dir']}{os.sep}sql{os.sep}db.sqlite")
     db.execute(PRAGMA_KEY)
@@ -36,7 +42,11 @@ def analyze_data(messages, conversations, items, args):
     data_path = f'{args["dir"]}{os.sep}'
     out_dir = f'{args["output"]}{os.sep}'
     SIG_ITEMS = get_items(items)
-    SIG_CONTACTS = get_contacts(conversations, SIG_ITEMS["accountE164"])
+    version = int(SIG_ITEMS["version"][0])
+    if version < 7:
+        SIG_CONTACTS = get_contacts(conversations, SIG_ITEMS["accountE164"], version)
+    else:
+        SIG_CONTACTS = get_contacts(conversations, SIG_ITEMS["number_id"].split(".")[0], version)
     SIG_MESSAGES = get_messages(messages)
     SIG_PRETTY_MSGS = get_msg_display(SIG_MESSAGES, SIG_CONTACTS)
     SIG_APP_LOGS = get_logs(data_path, "app", args)
@@ -60,11 +70,11 @@ def analyze_data(messages, conversations, items, args):
     config_json.close()
     config.close()
 
-def get_contacts(conversations, accountE164):
+def get_contacts(conversations, accountE164, version):
     contacts = {}
     for entry in range(0, len(conversations)):
         contact = json.loads(conversations[entry][0])
-        avatars, profileAvatar, group_avatar = get_avatars(contact)
+        avatars, profileAvatar, group_avatar = get_avatars(contact, version)
         contact["avatars"] = avatars
         contact["profileAvatar"] = profileAvatar
         contact["avatar"] = group_avatar
@@ -117,22 +127,23 @@ def get_msg_display(messages, contacts):
         if message["sent_at"] != "":
             message["SentUTC"] = get_utc(message["sent_at"])
         if message["type"] == "call-history":
-            if "acceptedTime" not in message["callHistoryDetails"]:
-                acceptedTime = ""
-            else:
-                acceptedTime = get_utc(message["callHistoryDetails"]["acceptedTime"])
-            if "endedTime" not in message["callHistoryDetails"]:
-                endedTime = ""
-            else:
-                endedTime = get_utc(message["callHistoryDetails"]["endedTime"])
-            message["body"] = {
-                "callMode": message["callHistoryDetails"]["callMode"],
-                "wasIncoming": message["callHistoryDetails"]["wasIncoming"],
-                "wasVideoCall": message["callHistoryDetails"]["wasVideoCall"],
-                "wasDeclined": message["callHistoryDetails"]["wasDeclined"],
-                "acceptedTime": acceptedTime,
-                "endedTime": endedTime,
-            }
+            if "callHistoryDetails" in message:
+                if "acceptedTime" not in message["callHistoryDetails"]:
+                    acceptedTime = ""
+                else:
+                    acceptedTime = get_utc(message["callHistoryDetails"]["acceptedTime"])
+                if "endedTime" not in message["callHistoryDetails"]:
+                    endedTime = ""
+                else:
+                    endedTime = get_utc(message["callHistoryDetails"]["endedTime"])
+                message["body"] = {
+                    "callMode": message["callHistoryDetails"]["callMode"],
+                    "wasIncoming": message["callHistoryDetails"]["wasIncoming"],
+                    "wasVideoCall": message["callHistoryDetails"]["wasVideoCall"],
+                    "wasDeclined": message["callHistoryDetails"]["wasDeclined"],
+                    "acceptedTime": acceptedTime,
+                    "endedTime": endedTime,
+                }
         if message.get("hasAttachments", "") == 1:
             attachment, details = get_attachments(message["attachments"])
             message["Attachments"] = attachment
@@ -149,12 +160,16 @@ def get_items(item_list):
             items[item["id"]] = item["value"]
         else:
             items[item["id"]] = ""
+    version = items["version"]
     items["lastAttemptedToRefreshProfilesAt"] = get_utc(
         items["lastAttemptedToRefreshProfilesAt"]
     )
-    items["lastHeartbeat"] = get_utc(items["lastHeartbeat"])
-    items["lastStartup"] = get_utc(items["lastStartup"])
-    items["nextSignedKeyRotationTime"] = get_utc(items["nextSignedKeyRotationTime"])
+    if int(items["version"][0]) < 7:
+        items["lastHeartbeat"] = get_utc(items["lastHeartbeat"])
+        items["lastStartup"] = get_utc(items["lastStartup"])
+        items["nextSignedKeyRotationTime"] = get_utc(items["nextSignedKeyRotationTime"])
+    else:
+        items["nextScheduledUpdateKeyTime"] = get_utc(items["nextScheduledUpdateKeyTime"])
     items["synced_at"] = get_utc(items["synced_at"])
     sorted_items = dict(sorted(items.items()))
     return sorted_items
@@ -184,7 +199,7 @@ def get_attachments(attachments):
     return attachment, details
 
 
-def get_avatars(contact):
+def get_avatars(contact, version):
     avatars_dict = {}
     profile_avatar = {}
     group_avatar = {}
@@ -193,21 +208,31 @@ def get_avatars(contact):
         avatar_list = contact["avatars"]
         for entry in avatar_list:
             if "imagePath" in entry:
-                if linux:
-                    path = entry["imagePath"].replace("\\", "/")
-                    entry["imagePath"] = f"avatars.noindex{os.sep}{path}"
+                if linux: ## FIX OS DEPENDENCY
+                    path = entry["imagePath"].replace("\\", f"{os.sep}")
+                else:
+                    path = entry["imagePath"].replace("/", f"{os.sep}")
+                entry["imagePath"] = f"avatars.noindex{os.sep}{path}"
                 avatars_dict.update({entry["id"]: entry["imagePath"]})
     if "profileAvatar" in contact and contact["profileAvatar"] is not None:
-        for hash, path in contact["profileAvatar"].items():
-            if linux:
-                path = path.replace("\\", "/")
-                path = f"attachments.noindex{os.sep}{path}"
-            profile_avatar.update({hash: path})
+        if "plaintextHash" in contact["profileAvatar"] and "path" in contact["profileAvatar"]:
+            #for plaintextHash, path in contact["profileAvatar"].items():
+            plaintextHash = contact["profileAvatar"]["plaintextHash"]
+            path = contact["profileAvatar"]["path"]
+            if linux: ## FIX OS DEPENDENCY
+                path = path.replace("\\", f"{os.sep}")
+            else:
+                path = path.replace("/", f"{os.sep}")
+            path = f"attachments.noindex{os.sep}{path}"
+            contact["profileAvatar"]["path"] = path
+            profile_avatar.update({"hash": plaintextHash, "path": path})
     if "avatar" in contact and contact["avatar"] is not None:
-        if linux:
-            path = contact["avatar"]["path"].replace("\\", "/")
-            contact["avatar"]["path"] = f"attachments.noindex{os.sep}{path}"
-            group_avatar = contact["avatar"]
+        if linux:  ## FIX OS DEPENDENCY
+            path = contact["avatar"]["path"].replace("\\", f"{os.sep}")
+        else:
+            path = contact["avatar"]["path"].replace("/", f"{os.sep}")
+        contact["avatar"]["path"] = f"attachments.noindex{os.sep}{path}"
+        group_avatar = contact["avatar"]
     avatars_dict = dict(sorted(avatars_dict.items()))
     return avatars_dict, profile_avatar, group_avatar
 
@@ -254,7 +279,7 @@ def get_fields(table_data):
 
 
 def get_utc(ts):
-    if ts is None:
+    if ts is None or not isinstance(ts, int):
         dtg = ""
     else:
         epoch = ts / 1000
@@ -264,31 +289,48 @@ def get_utc(ts):
 
 
 def start_web(args):
+    #try:
+        #from signal_parser import spweb
+    #except ImportError:
+        #import spweb
+    #IP = args["web"]
+    #data_path = f'{args["dir"]}{os.sep}'
+    #out_dir = f'{args["output"]}{os.sep}'
+    #dst_path = f"{out_dir}static"
+    #dst_path = os.path.abspath(dst_path)
+    #src_path = os.path.abspath(data_path)
+    #if os.path.exists(dst_path) and os.path.islink(dst_path):
+        #os.unlink(dst_path)
+    #elif os.path.exists(dst_path) and not os.path.islink(dst_path):
+        #print("The file/folder 'static' exists and is not a link. Either rename/delete this file, or run this command from another location.")
+        #raise SystemExit(1)
+    #curdir = os.getcwd()
+    #os.chdir(out_dir)
+    #os.symlink(src_path, f"{out_dir}static")
+    #os.chdir(curdir)
+    #spweb.app.config['src'] = out_dir
+    #spweb.app.static_url_path = f'{dst_path}'
+    #spweb.app.static_folder = f'{dst_path}'
+    #spweb.app.run(host=IP)
     try:
         from signal_parser import spweb
     except ImportError:
         import spweb
-    IP = args["web"]
-    data_path = f'{args["dir"]}{os.sep}'
-    out_dir = f'{args["output"]}{os.sep}'
-    dst_path = f"{out_dir}static"
-    dst_path = os.path.abspath(dst_path)
-    src_path = os.path.abspath(data_path)
-    dir_fd = os.open(f"{data_path}", os.O_RDONLY)
-    if os.path.exists(dst_path) and os.path.islink(dst_path):
-        os.unlink(dst_path)
-    elif os.path.exists(dst_path) and not os.path.islink(dst_path):
-        print("The file/folder 'static' exists and is not a link. Either rename/delete this file, or run this command from another location.")
-        raise SystemExit(1)
-    curdir = os.getcwd()
-    os.chdir(out_dir)
-    os.symlink(src_path, "static")
-    os.chdir(curdir)
-    spweb.app.config['src'] = out_dir
-    spweb.app.static_url_path = f'{dst_path}'
-    spweb.app.static_folder = f'{dst_path}'
-    spweb.app.run(host=IP)
 
+    IP = args.get("web", "0.0.0.0")
+    data_path = os.path.abspath(args["dir"])
+    out_dir = os.path.abspath(args["output"])
+
+    # Add custom route for serving static files from data_path
+    @spweb.app.route('/static/<path:filename>')
+    def custom_static(filename):
+        return send_from_directory(data_path, filename)
+
+    # Config, in case other logic relies on it
+    spweb.app.config['src'] = out_dir
+
+    # Do not touch app.static_url_path/folder, we’re serving manually
+    spweb.app.run(host=IP)
 
 def main():
     """Parse provided arguments"""
