@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+exclude = ["debian*", "binaries*", "build*", "dist*", "archive*"]
+
+[project]
+name = "signal-parser"
+version = "1.2.0"
+dependencies = [
+    "flask",
+    "sqlcipher3-binary; os_name != 'nt'",
+    "sqlcipher3-wheels; os_name == 'nt'",
+]
+requires-python = ">=3.9"
+authors = [
+  {name = "G-K7 and Corey Forman (digitalsleuth)", email = "github@digitalsleuth.ca"}
+]
+maintainers = [
+  {name = "G-K7 and Corey Forman (digitalsleuth)", email = "github@digitalsleuth.ca"}
+]
+description = "Signal Desktop Parser"
+readme = "README.md"
+keywords = ["digital forensics", "dfir", "signal", "desktop", "parse"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent"
+]
+
+[project.urls]
+Homepage = "https://github.com/digitalsleuth/signal-parser"
+
+[project.scripts]
+parse-docx = "signal_parser.signal_parser:main"
